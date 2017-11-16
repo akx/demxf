@@ -19,3 +19,10 @@ Extract all .maxpats from MXF into a single (non-compliant) JSON file
 
 * `python3 extract_patches.py -i some.mxf -o combined.json`
 
+
+
+"Decompile" a patch (or a combined patch JSON) into a pseudo-Python file
+------------------------------------------------------------------------
+
+* `python3 decompile_patch.py -i patch.maxpat`
+
