@@ -3,11 +3,6 @@ from collections import defaultdict
 
 from demxf.toposort import CycleError, topological_sort
 
-
-def filter_keys(d, to_remove):
-    return {k: v for (k, v) in d.items() if k not in to_remove}
-
-
 aesthetic_keys = {
     'background',
     'bgcolor',
@@ -21,7 +16,10 @@ aesthetic_keys = {
     'bgfillcolor_type',
     'bgmode',
     'bgoncolor',
+    'blinkcolor',
     'border',
+    'bordercolor',
+    'checkedcolor',
     'clickthrough',
     'color',
     'curvecolor',
@@ -31,17 +29,21 @@ aesthetic_keys = {
     'fontname',
     'fontsize',
     'gradient',
+    'gridcolor',
     'hidden',
     'htabcolor',
     'htricolor',
     'ignoreclick',
     'markercolor',
+    'needlecolor',
     'offcolor',
     'offset',
+    'outlinecolor',
     'patching_rect',
     'presentation',
     'presentation_rect',
     'rounded',
+    'selectioncolor',
     'slidercolor',
     'style',
     'tabcolor',
@@ -49,24 +51,44 @@ aesthetic_keys = {
     'textoncolor',
     'textovercolor',
     'tricolor',
+    'uncheckedcolor',
     'usebgoncolor',
 }
 
 nonprinted_keys = {
+    'data',
+    'id',
+    'maxclass',
     'numinlets',
     'numoutlets',
     'outlettype',
-    'maxclass',
-    'id',
-    'saved_object_attributes',
     'saved_attribute_attributes',
-    'data',
+    'saved_object_attributes',
 }
+
+
+def filter_keys(d, to_remove):
+    return {k: v for (k, v) in d.items() if k not in to_remove}
+
+
+def identifierify(value):
+    value = re.sub('[^a-z0-9_]+', '', value.replace(' ', '_'), flags=re.I)
+    if not value:
+        return None
+    if not value[0].isalpha():
+        value = '_' + value
+    return value
+
+
+def remove_aesthetics(box):
+    return {k: v for (k, v) in box.items() if not (k in aesthetic_keys or k.endswith('color'))}
 
 
 def divine_id(box, id_prefix=''):
     num_id = box['id'].replace('obj-', '')
     t_id = get_box_printable_class(box)
+    if t_id == 'newobj' and 'text' in box:
+        t_id = (identifierify(box['text'].lower()) or t_id)
     return '%s%s_%s' % (id_prefix, t_id, num_id)
 
 
@@ -80,7 +102,7 @@ def get_box_printable_class(box):
 
 def decompile_patch(content, id_prefix=''):
     content = content['patcher'].copy()
-    boxes = {b['box']['id']: filter_keys(b['box'], aesthetic_keys) for b in content.pop('boxes', [])}
+    boxes = {b['box']['id']: remove_aesthetics(b['box']) for b in content.pop('boxes', [])}
     lines = [(l['patchline']['source'], l['patchline']['destination']) for l in content.pop('lines', [])]
     divined_id_map = {id: divine_id(box, id_prefix) for (id, box) in boxes.items()}
     lines_by_source_id = defaultdict(list)
@@ -103,7 +125,6 @@ def decompile_patch(content, id_prefix=''):
             return (False, -sort_order.index(id))
         else:
             return (True, divined_id_map.get(id, id))
-
 
     subpatchers = []
     for id, box in sorted(boxes.items(), key=sort_key):
