@@ -105,42 +105,55 @@ def get_box_printable_class(box):
     return t_id
 
 
-def decompile_patch(content, id_prefix=''):
-    content = content['patcher'].copy()
-    boxes = {b['box']['id']: remove_aesthetics(b['box']) for b in content.pop('boxes', [])}
-    lines = [(l['patchline']['source'], l['patchline']['destination']) for l in content.pop('lines', [])]
-    divined_id_map = {id: divine_id(box, id_prefix) for (id, box) in boxes.items()}
-    lines_by_source_id = defaultdict(list)
-    for line in lines:
-        source, dest = line
-        lines_by_source_id[source[0]].append(line)
-    topo_sort_graph = {
-        source_id: set(line[1][0] for line in lines)
-        for (source_id, lines)
-        in lines_by_source_id.items()
-    }
-    try:
-        sort_order = list(topological_sort(topo_sort_graph))
-    except CycleError:
-        sort_order = []
+class PatchDecompiler:
+    def __init__(self, id_prefix=''):
+        self.id_prefix = id_prefix
 
-    def sort_key(pair):
+    def initialize(self, content):
+        if len(content) == 1 and 'patcher' in content:
+            content = content['patcher']
+        content = content.copy()
+        boxes = {b['box']['id']: remove_aesthetics(b['box']) for b in content.pop('boxes', [])}
+        lines = [(l['patchline']['source'], l['patchline']['destination']) for l in content.pop('lines', [])]
+        divined_id_map = {id: divine_id(box, self.id_prefix) for (id, box) in boxes.items()}
+        lines_by_source_id = defaultdict(list)
+        for line in lines:
+            source, dest = line
+            lines_by_source_id[source[0]].append(line)
+        topo_sort_graph = {
+            source_id: set(line[1][0] for line in lines)
+            for (source_id, lines)
+            in lines_by_source_id.items()
+        }
+        try:
+            sort_order = list(topological_sort(topo_sort_graph))
+        except CycleError:
+            sort_order = []
+        self.boxes = boxes
+        self.lines = lines
+        self.divined_id_map = divined_id_map
+        self.lines_by_source_id = lines_by_source_id
+        self.sort_order = sort_order
+        self.subpatchers = []
+        for box in boxes.values():
+            if 'patcher' in box:
+                self.subpatchers.append(box.pop('patcher'))
+                box['subpatcher_id'] = (len(self.subpatchers) - 1)
+                box['maxclass'] = '_subpatcher'
+
+    def _sort_key(self, pair):
         id, box = pair
-        if id in sort_order:
-            return (False, -sort_order.index(id))
+        if id in self.sort_order:
+            return (False, -self.sort_order.index(id))
         else:
-            return (True, divined_id_map.get(id, id))
+            return (True, self.divined_id_map.get(id, id))
 
-    subpatchers = []
-    for id, box in sorted(boxes.items(), key=sort_key):
+    def process_box(self, box):
+        id = box['id']
         box = box.copy()
         if box['maxclass'] == 'comment':
             print('# (comment) ' + box['text'])
-            continue
-        if 'patcher' in box:
-            subpatchers.append(box.pop('patcher'))
-            box['subpatcher_id'] = (len(subpatchers) - 1)
-            box['maxclass'] = '_subpatcher'
+            return
         type_comment = '{n_in} in, {n_out} out ({types})'.format(
             n_in=box.get('numinlets', 0),
             n_out=box.get('numoutlets', 0),
@@ -149,35 +162,51 @@ def decompile_patch(content, id_prefix=''):
         printable_class = get_box_printable_class(box)
         filtered_box = filter_keys(box, nonprinted_keys)
         formatted_keys = ['{}={}'.format(key, repr(value)) for (key, value) in sorted(filtered_box.items())]
+
         if len(formatted_keys) <= 2 or len(''.join(formatted_keys)) <= 79:
             print('{id} = {cls}({keys})'.format(
-                id=divined_id_map[id],
+                id=self.divined_id_map[id],
                 cls=printable_class,
                 keys=', '.join(formatted_keys),
             ))
         else:
             print('{id} = {cls}('.format(
-                id=divined_id_map[id],
+                id=self.divined_id_map[id],
                 cls=printable_class,
             ))
             for line in formatted_keys:
                 print('  {line},'.format(line=line))
             print(')')
         outlet_types = dict(enumerate(box.get('outlettype', [])))
-        for line in sorted(lines_by_source_id[id]):
+        for line in sorted(self.lines_by_source_id[id]):
             (source_id, source_pin), (dest_id, dest_pin) = line
             print('{source_id}[{source_pin}] = {dest_id}[{dest_pin}]  # type = {type}'.format(
-                source_id=divined_id_map[source_id],
+                source_id=self.divined_id_map[source_id],
                 source_pin=source_pin,
-                dest_id=divined_id_map[dest_id],
+                dest_id=self.divined_id_map[dest_id],
                 dest_pin=dest_pin,
                 type=(outlet_types.get(source_pin) or '?'),
             ))
 
-    for id, subpatcher in enumerate(subpatchers):
+    def dump(self):
+        for id, box in sorted(self.boxes.items(), key=self._sort_key):
+            self.process_box(box)
+
+        for id, subpatcher in enumerate(self.subpatchers):
+            self.process_subpatcher(id, subpatcher)
+
+    def process_subpatcher(self, id, subpatcher):
         print('# -- subpatcher {} --'.format(id))
-        sub_id_prefix = id_prefix + 'sp{}_'.format(id)
-        decompile_patch({'patcher': subpatcher}, sub_id_prefix)
+        sub_id_prefix = self.id_prefix + 'sp{}_'.format(id)
+        subdecompiler = self.__class__(id_prefix=sub_id_prefix)
+        subdecompiler.initialize(subpatcher)
+        subdecompiler.dump()
+
+
+def decompile_patch(patcher, id_prefix=''):
+    decomp = PatchDecompiler(id_prefix)
+    decomp.initialize(patcher)
+    decomp.dump()
 
 
 def decompile_patchverse(patchverse):
