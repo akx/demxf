@@ -94,8 +94,13 @@ def divine_id(box, id_prefix=''):
 
 def get_box_printable_class(box):
     t_id = box['maxclass']
-    if t_id == 'newobj' and box['text'].isalnum():
-        t_id = box['text']
+    if t_id == 'newobj':
+        if box['text'].startswith('r '):
+            t_id = 'receive'
+        elif box['text'].startswith('s '):
+            t_id = 'send'
+        elif box['text'].isalnum():
+            t_id = box['text']
     t_id = t_id.replace('~', '_sigl')
     return t_id
 
@@ -130,6 +135,7 @@ def decompile_patch(content, id_prefix=''):
     for id, box in sorted(boxes.items(), key=sort_key):
         box = box.copy()
         if box['maxclass'] == 'comment':
+            print('# (comment) ' + box['text'])
             continue
         if 'patcher' in box:
             subpatchers.append(box.pop('patcher'))
