@@ -1,3 +1,5 @@
+*.json
+*.maxpat
 *.mxf
 *.py[cod]
 *.zip
