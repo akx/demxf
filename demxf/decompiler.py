@@ -105,7 +105,7 @@ def get_box_printable_class(box):
     return t_id
 
 
-class PatchDecompiler:
+class BasePatchDecompiler:
     def __init__(self, id_prefix=''):
         self.id_prefix = id_prefix
 
@@ -113,7 +113,7 @@ class PatchDecompiler:
         if len(content) == 1 and 'patcher' in content:
             content = content['patcher']
         content = content.copy()
-        boxes = {b['box']['id']: remove_aesthetics(b['box']) for b in content.pop('boxes', [])}
+        boxes = {b['box']['id']: b['box'] for b in content.pop('boxes', [])}
         lines = [(l['patchline']['source'], l['patchline']['destination']) for l in content.pop('lines', [])]
         divined_id_map = {id: divine_id(box, self.id_prefix) for (id, box) in boxes.items()}
         lines_by_source_id = defaultdict(list)
@@ -148,6 +148,21 @@ class PatchDecompiler:
         else:
             return (True, self.divined_id_map.get(id, id))
 
+    def dump(self):
+        for id, box in sorted(self.boxes.items(), key=self._sort_key):
+            self.process_box(box)
+
+        for id, subpatcher in enumerate(self.subpatchers):
+            self.process_subpatcher(id, subpatcher)
+
+    def process_box(self, box):
+        pass
+
+    def process_subpatcher(self, id, subpatcher):
+        pass
+
+
+class PatchDecompiler(BasePatchDecompiler):
     def process_box(self, box):
         id = box['id']
         box = box.copy()
@@ -160,7 +175,7 @@ class PatchDecompiler:
             types=', '.join(s or '?' for s in box.get('outlettype', [])),
         )
         printable_class = get_box_printable_class(box)
-        filtered_box = filter_keys(box, nonprinted_keys)
+        filtered_box = filter_keys(remove_aesthetics(box), nonprinted_keys)
         formatted_keys = ['{}={}'.format(key, repr(value)) for (key, value) in sorted(filtered_box.items())]
 
         if len(formatted_keys) <= 2 or len(''.join(formatted_keys)) <= 79:
@@ -187,13 +202,6 @@ class PatchDecompiler:
                 dest_pin=dest_pin,
                 type=(outlet_types.get(source_pin) or '?'),
             ))
-
-    def dump(self):
-        for id, box in sorted(self.boxes.items(), key=self._sort_key):
-            self.process_box(box)
-
-        for id, subpatcher in enumerate(self.subpatchers):
-            self.process_subpatcher(id, subpatcher)
 
     def process_subpatcher(self, id, subpatcher):
         print('# -- subpatcher {} --'.format(id))
