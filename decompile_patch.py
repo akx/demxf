@@ -1,12 +1,7 @@
 import argparse
 import json
 
-from demxf.decompiler import decompile_patch
-
-
-def decompile_patchverse(patchverse):
-    for patch_name, patch in patchverse.items():
-        decompile_patch(patch, id_prefix=patch_name.split('.')[0] + '_')
+from demxf.decompiler import decompile_patch, decompile_patchverse
 
 
 def main():

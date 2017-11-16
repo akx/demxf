@@ -1,3 +1,4 @@
+import re
 from collections import defaultdict
 
 from demxf.toposort import CycleError, topological_sort
@@ -150,3 +151,14 @@ def decompile_patch(content, id_prefix=''):
         print('# -- subpatcher {} --'.format(id))
         sub_id_prefix = id_prefix + 'sp{}_'.format(id)
         decompile_patch({'patcher': subpatcher}, sub_id_prefix)
+
+
+def decompile_patchverse(patchverse):
+    for patch_name, patch in patchverse.items():
+        prefix = re.sub('[^a-z0-9_]+', '', patch_name.split('.')[0], flags=re.I)
+        if not prefix[0].isalpha():
+            prefix = 'p' + prefix
+        print('# ===')
+        print('# === ' + patch_name)
+        print('# ===')
+        decompile_patch(patch, id_prefix=prefix + '_')
